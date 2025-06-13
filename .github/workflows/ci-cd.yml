@@ -3,6 +3,8 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main, develop ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main, develop ]
 
@@ -74,7 +76,10 @@ jobs:
         context: .
         file: ./serving/Dockerfile
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/iris-classifier-api:latest
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/iris-classifier-api:latest
+          ${{ secrets.DOCKERHUB_USERNAME }}/iris-classifier-api:${{ github.sha }}
+          ${{ github.ref_type == 'tag' && format('{0}/iris-classifier-api:{1}', secrets.DOCKERHUB_USERNAME, github.ref_name) || '' }}
     
     # 這裡可以加入部署到雲端的步驟
     - name: Deploy to Production (Example)
