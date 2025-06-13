@@ -32,6 +32,11 @@ class RegisterModelRequest(BaseModel):
 class PromoteRequest(BaseModel):
     stage: str  # e.g., "Staging" or "Production"
 
+class TrainRequest(BaseModel):
+    model_name: str
+    C: float = 1.0
+    max_iter: int = 200
+
 # Cache for the loaded model
 _model = None
 _model_version = None
@@ -166,8 +171,8 @@ async def load_model_endpoint(payload: LoadModelRequest):
 async def register_model(payload: RegisterModelRequest):
     """Register an MLflow run as a new model version in the Model Registry."""
     client = MlflowClient()
+    model_uri = f"runs:/{payload.run_id}/model"
     try:
-        model_uri = f"runs:/{payload.run_id}/model"
         mv = client.create_model_version(
             name=payload.model_name,
             source=model_uri,
@@ -176,7 +181,6 @@ async def register_model(payload: RegisterModelRequest):
         return {"model_name": mv.name, "version": mv.version, "status": mv.status}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Registration failed: {str(e)}")
-
 
 @app.post("/model/{model_name}/{version}/promote", tags=["model"])
 async def promote_model(model_name: str, version: str, payload: PromoteRequest):
@@ -193,7 +197,6 @@ async def promote_model(model_name: str, version: str, payload: PromoteRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.delete("/model/{model_name}", tags=["model"])
 async def delete_model(model_name: str):
     """Delete a registered model and all its versions."""
@@ -203,7 +206,6 @@ async def delete_model(model_name: str):
         return {"status": "deleted", "model_name": model_name}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
 
 @app.delete("/model/{model_name}/{version}", tags=["model"])
 async def delete_model_version(model_name: str, version: str):
@@ -216,22 +218,45 @@ async def delete_model_version(model_name: str, version: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 # ---------- Train endpoint ----------
-
 @app.post("/train", tags=["mlflow"])
-async def train(background_tasks: BackgroundTasks):
+async def train(payload: TrainRequest, background_tasks: BackgroundTasks):
     """Trigger a training run using train_demo and log to MLflow.
     Runs in background to avoid blocking request."""
-    from mlops_framework.train import train_demo
+    try:
+        from mlops_framework.train import train_demo
+    except ModuleNotFoundError:
+        from src.mlops_framework.train import train_demo
 
     def _run_train():
         try:
-            result = train_demo()
+            mlflow.set_tag("model_name", payload.model_name)
+            result = train_demo(C=payload.C, max_iter=payload.max_iter)
             print("Training completed", result)
         except Exception as exc:
             print("Training failed", exc)
 
     background_tasks.add_task(_run_train)
-    return {"status": "training_started"}
+    return {"status": "training_started", "model_name": payload.model_name}
+
+# ---------- Synchronous Train endpoint ----------
+@app.post("/train-sync", tags=["mlflow"])
+async def train_sync(payload: TrainRequest):
+    """Train synchronously and return run info (run_id, experiment, default model name, metrics)."""
+    try:
+        from mlops_framework.train import train_demo
+    except ModuleNotFoundError:
+        from src.mlops_framework.train import train_demo
+
+    mlflow.set_tag("model_name", payload.model_name)
+    result = train_demo(C=payload.C, max_iter=payload.max_iter)
+    run_id = result.get("run_id")
+    metrics = result.get("metrics", {})
+    return {
+        "run_id": run_id,
+        "experiment": EXPERIMENT_NAME,
+        "model_name": payload.model_name,
+        "metrics": metrics,
+    }
 
 # ----------- MLflow query endpoints -----------
 
@@ -244,7 +269,6 @@ async def list_experiments():
         {"experiment_id": exp.experiment_id, "name": exp.name}
         for exp in experiments
     ]
-
 
 @app.get("/experiments/{experiment_name}/runs", tags=["mlflow"])
 async def list_runs(experiment_name: str, max_results: int = 20):
@@ -269,7 +293,6 @@ async def list_runs(experiment_name: str, max_results: int = 20):
         for r in runs
     ]
 
-
 @app.get("/models", tags=["model"])
 async def list_registered_models():
     """List all registered models."""
@@ -285,7 +308,6 @@ async def list_registered_models():
         }
         for m in models
     ]
-
 
 @app.get("/models/{model_name}/versions", tags=["model"])
 async def list_model_versions(model_name: str):
