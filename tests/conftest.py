@@ -36,3 +36,14 @@ def trained_model():
     from src.mlops_framework.train import train_demo
     result = train_demo(mlflow_tracking_uri=f"file:{_MLRUNS_DIR}")
     return result["run_id"], result["metrics"]
+
+# --- 測試結束自動清理 MLflow 暫存目錄 ---
+import atexit
+import shutil
+
+def _cleanup():
+    if os.path.exists(_MLRUNS_DIR):
+        shutil.rmtree(_MLRUNS_DIR, ignore_errors=True)
+        print(f"Cleaned up temporary MLflow directory: {_MLRUNS_DIR}")
+
+atexit.register(_cleanup)
