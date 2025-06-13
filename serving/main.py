@@ -1,8 +1,60 @@
-from fastapi import FastAPI
-from typing import Dict
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import mlflow
+import mlflow.sklearn
+import numpy as np
+from typing import Dict, List, Any
 import os
 
-app = FastAPI(title="MLOps Framework API", version="0.1.0")
+app = FastAPI(title="Iris Classifier API", version="1.0.0")
+
+class IrisFeatures(BaseModel):
+    sepal_length: float
+    sepal_width: float
+    petal_length: float
+    petal_width: float
+
+class PredictionResult(BaseModel):
+    prediction: str
+    probabilities: Dict[str, float]
+    model_version: str
+
+# Cache for the loaded model
+_model = None
+_model_version = None
+
+def load_latest_model():
+    """Load the latest model from MLflow."""
+    global _model, _model_version
+    
+    if _model is None:
+        try:
+            # Connect to MLflow server
+            mlflow.set_tracking_uri("http://mlflow:5000")
+            
+            # Get the latest run with 'logreg_demo' in the run name
+            runs = mlflow.search_runs(
+                experiment_ids=["0"],  # Default experiment ID
+                filter_string="attributes.run_name LIKE '%logreg_demo%'"
+            )
+            
+            if runs.empty:
+                raise ValueError("No trained model found in MLflow")
+                
+            latest_run = runs.iloc[0]
+            model_uri = f"runs:/{latest_run.run_id}/model"
+            
+            # Load the model
+            _model = mlflow.sklearn.load_model(model_uri)
+            _model_version = latest_run.run_id
+            print(f"Loaded model version: {_model_version}")
+            
+        except Exception as e:
+            print(f"Error loading model: {str(e)}")
+            _model = None
+            _model_version = None
+    
+    return _model, _model_version
 
 @app.get("/health", tags=["health"])
 async def health() -> Dict[str, str]:
@@ -13,6 +65,50 @@ async def health() -> Dict[str, str]:
 @app.get("/")
 async def root() -> Dict[str, str]:
     return {"message": "Welcome to the MLOps Framework API"}
+
+@app.post("/predict", response_model=PredictionResult)
+async def predict(features: IrisFeatures):
+    """Predict the iris flower type from input features."""
+    model, model_version = load_latest_model()
+    
+    if model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Please train a model first."
+        )
+    
+    # Prepare input features
+    input_data = np.array([
+        [features.sepal_length, features.sepal_width, 
+         features.petal_length, features.petal_width]
+    ])
+    
+    try:
+        # Get prediction and probabilities
+        prediction = model.predict(input_data)[0]
+        probabilities = model.predict_proba(input_data)[0]
+        
+        # Map class indices to class names
+        class_names = ['setosa', 'versicolor', 'virginica']
+        predicted_class = class_names[int(prediction)]
+        
+        # Format probabilities
+        prob_dict = {
+            class_name: float(prob) 
+            for class_name, prob in zip(class_names, probabilities)
+        }
+        
+        return {
+            "prediction": predicted_class,
+            "probabilities": prob_dict,
+            "model_version": model_version
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction failed: {str(e)}"
+        )
 
 # Future endpoints (model prediction, registry, etc.) will be added here.
 
