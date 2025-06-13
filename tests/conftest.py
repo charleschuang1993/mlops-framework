@@ -1,6 +1,13 @@
 import pytest
 import os
 import tempfile
+import sys
+from pathlib import Path
+
+# Add project root to sys.path for CI runners where PYTHONPATH is not set
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # 為每次 test session 建立獨立的 MLflow file store
 _MLRUNS_DIR = tempfile.mkdtemp(prefix="mlruns_test_")
