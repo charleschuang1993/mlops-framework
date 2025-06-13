@@ -20,6 +20,6 @@ def trained_model():
     """訓練一個測試用模型並返回 run_id"""
     from src.mlops_framework.train import train_demo
     metrics = train_demo()
-    run_id = mlflow.active_run().info.run_id
-    mlflow.end_run()
+    run = mlflow.last_active_run()
+    run_id = run.info.run_id if run else ""
     return run_id, metrics
