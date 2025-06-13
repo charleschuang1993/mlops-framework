@@ -13,7 +13,7 @@ services:
       - "5432:5432"
 
   mlflow:
-    image: mlflow/mlflow:latest
+    image: ghcr.io/mlflow/mlflow:latest
     depends_on:
       - postgres
     environment:
@@ -30,7 +30,9 @@ services:
       - "5000:5000"
 
   api:
-    build: ./serving
+    build:
+      context: .
+      dockerfile: serving/Dockerfile
     depends_on:
       - mlflow
     environment:
