@@ -2,8 +2,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import mlflow
 import mlflow.sklearn
+from mlflow.tracking import MlflowClient
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import os
 
 EXPERIMENT_NAME = "iris-demo"
@@ -23,6 +24,13 @@ class PredictionResult(BaseModel):
 
 class LoadModelRequest(BaseModel):
     run_id: str
+
+class RegisterModelRequest(BaseModel):
+    run_id: str
+    model_name: str = EXPERIMENT_NAME
+
+class PromoteRequest(BaseModel):
+    stage: str  # e.g., "Staging" or "Production"
 
 # Cache for the loaded model
 _model = None
@@ -153,6 +161,131 @@ async def load_model_endpoint(payload: LoadModelRequest):
         return {"status": "loaded", "model_version": _model_version}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Failed to load model: {str(e)}")
+
+@app.post("/register-model", tags=["model"])
+async def register_model(payload: RegisterModelRequest):
+    """Register an MLflow run as a new model version in the Model Registry."""
+    client = MlflowClient()
+    try:
+        model_uri = f"runs:/{payload.run_id}/model"
+        mv = client.create_model_version(
+            name=payload.model_name,
+            source=model_uri,
+            run_id=payload.run_id,
+        )
+        return {"model_name": mv.name, "version": mv.version, "status": mv.status}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Registration failed: {str(e)}")
+
+
+@app.post("/model/{model_name}/{version}/promote", tags=["model"])
+async def promote_model(model_name: str, version: str, payload: PromoteRequest):
+    """Transition a model version to a new stage (e.g., Staging, Production)."""
+    client = MlflowClient()
+    try:
+        client.transition_model_version_stage(
+            name=model_name,
+            version=version,
+            stage=payload.stage,
+            archive_existing_versions=False,
+        )
+        return {"model_name": model_name, "version": version, "new_stage": payload.stage}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/model/{model_name}", tags=["model"])
+async def delete_model(model_name: str):
+    """Delete a registered model and all its versions."""
+    client = MlflowClient()
+    try:
+        client.delete_registered_model(model_name)
+        return {"status": "deleted", "model_name": model_name}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/model/{model_name}/{version}", tags=["model"])
+async def delete_model_version(model_name: str, version: str):
+    """Delete a specific model version from the registry."""
+    client = MlflowClient()
+    try:
+        client.delete_model_version(name=model_name, version=version)
+        return {"status": "deleted", "model_name": model_name, "version": version}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ----------- MLflow query endpoints -----------
+
+@app.get("/experiments", tags=["mlflow"])
+async def list_experiments():
+    """Return all experiments id & name."""
+    client = MlflowClient()
+    experiments = client.list_experiments()
+    return [
+        {"experiment_id": exp.experiment_id, "name": exp.name}
+        for exp in experiments
+    ]
+
+
+@app.get("/experiments/{experiment_name}/runs", tags=["mlflow"])
+async def list_runs(experiment_name: str, max_results: int = 20):
+    """List recent runs of an experiment by name."""
+    client = MlflowClient()
+    # Resolve experiment id
+    exp = client.get_experiment_by_name(experiment_name)
+    if exp is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    runs = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        order_by=["attributes.start_time DESC"],
+        max_results=max_results,
+    )
+    return [
+        {
+            "run_id": r.info.run_id,
+            "status": r.info.status,
+            "start_time": r.info.start_time,
+            "run_name": r.data.tags.get("mlflow.runName", "")
+        }
+        for r in runs
+    ]
+
+
+@app.get("/models", tags=["model"])
+async def list_registered_models():
+    """List all registered models."""
+    client = MlflowClient()
+    models = client.list_registered_models()
+    return [
+        {
+            "name": m.name,
+            "latest_versions": [
+                {"version": v.version, "stage": v.current_stage}
+                for v in m.latest_versions
+            ] if m.latest_versions else []
+        }
+        for m in models
+    ]
+
+
+@app.get("/models/{model_name}/versions", tags=["model"])
+async def list_model_versions(model_name: str):
+    """List versions of a given model."""
+    client = MlflowClient()
+    versions = client.search_model_versions(filter_string=f"name='{model_name}'")
+    if not versions:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return [
+        {
+            "version": v.version,
+            "stage": v.current_stage,
+            "status": v.status,
+            "run_id": v.run_id,
+            "creation_time": v.creation_timestamp,
+        }
+        for v in versions
+    ]
 
 if __name__ == "__main__":
     import uvicorn
