@@ -6,6 +6,8 @@ import numpy as np
 from typing import Dict, List, Any
 import os
 
+EXPERIMENT_NAME = "iris-demo"
+
 app = FastAPI(title="Iris Classifier API", version="1.0.0")
 
 class IrisFeatures(BaseModel):
@@ -32,13 +34,15 @@ def load_latest_model():
     
     if _model is None:
         try:
-            # Connect to MLflow server
-            mlflow.set_tracking_uri("http://mlflow:5000")
+            # Connect to MLflow tracking URI (env or default)
+            mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
+            mlflow.set_experiment(EXPERIMENT_NAME)
             
             # Get the latest run with 'logreg_demo' in the run name
             runs = mlflow.search_runs(
-                experiment_ids=["0"],  # Default experiment ID
-                filter_string="attributes.run_name LIKE '%logreg_demo%'"
+                filter_string="attributes.run_name LIKE '%logreg_demo%'",
+                order_by=["start_time DESC"],
+                max_results=1,
             )
             
             if runs.empty:
@@ -72,13 +76,15 @@ async def root() -> Dict[str, str]:
 @app.post("/predict", response_model=PredictionResult)
 async def predict(features: IrisFeatures):
     """Predict the iris flower type from input features."""
-    model, model_version = load_latest_model()
-    
-    if model is None:
+    global _model, _model_version
+
+    if _model is None:
         raise HTTPException(
             status_code=503,
             detail="Model not loaded. Please train a model first."
         )
+    
+    model, model_version = _model, _model_version
     
     # Prepare input features
     input_data = np.array([
@@ -134,16 +140,13 @@ async def load_model_endpoint(payload: LoadModelRequest):
         local_root = tracking_uri.replace("file:", "") if tracking_uri.startswith("file:") else ""
 
         if local_root:
-            local_model_path = f"{local_root}/0/{payload.run_id}/artifacts/model"
+            potential_local = f"{local_root}/{EXPERIMENT_NAME}/{payload.run_id}/artifacts/model"
+            model_uri = potential_local if os.path.exists(potential_local) else None
         else:
-            local_model_path = ""
+            model_uri = None
 
-        if local_model_path and os.path.exists(local_model_path):
-            model_uri = local_model_path
-        else:
-            # Fall back to whatever tracking URI is configured (docker scenario)
-            base_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
-            mlflow.set_tracking_uri(base_uri)
+        if not model_uri:
+            mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
             model_uri = f"runs:/{payload.run_id}/model"
         _model = mlflow.sklearn.load_model(model_uri)
         _model_version = payload.run_id

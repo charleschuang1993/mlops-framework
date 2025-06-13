@@ -18,7 +18,7 @@ def train_demo(
     C: float = 1.0,
     max_iter: int = 200,
     mlflow_tracking_uri: str | None = None,
-) -> Dict[str, float]:
+) -> Dict[str, float | str]:
     """Train a logistic regression on the Iris dataset and log to MLflow.
 
     Parameters
@@ -33,9 +33,12 @@ def train_demo(
     if mlflow_tracking_uri:
         mlflow.set_tracking_uri(mlflow_tracking_uri)
 
+    # Ensure experiment exists – keep name consistent with tests & serving
+    mlflow.set_experiment("iris-demo")
+
     X_train, y_train, X_test, y_test = load_demo_iris()
 
-    with mlflow.start_run(run_name="logreg_demo"):
+    with mlflow.start_run(run_name="logreg_demo") as run:
         model = LogisticRegression(C=C, max_iter=max_iter, multi_class="auto")
         model.fit(X_train, y_train)
 
@@ -50,4 +53,4 @@ def train_demo(
         # Log model artifact
         mlflow.sklearn.log_model(model, "model")
 
-        return metrics
+        return {"run_id": run.info.run_id, "metrics": metrics}

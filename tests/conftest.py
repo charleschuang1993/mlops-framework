@@ -13,7 +13,8 @@ import mlflow
 
 # 建立 Default 實驗 (experiment_id=0) 以避免首次使用空目錄時找不到
 mlflow.set_tracking_uri(f"file:{_MLRUNS_DIR}")
-mlflow.set_experiment("Default")
+EXPERIMENT_NAME = "iris-demo"
+mlflow.set_experiment(EXPERIMENT_NAME)
 
 # 只在測試時動態導入，避免與主程式衝突
 @pytest.fixture(scope="session")
@@ -26,8 +27,5 @@ def test_client():
 def trained_model():
     """訓練一個測試用模型並返回 run_id"""
     from src.mlops_framework.train import train_demo
-    # 確保 train_demo 使用同一個 tracking URI
-    metrics = train_demo(mlflow_tracking_uri=f"file:{_MLRUNS_DIR}")
-    run = mlflow.last_active_run()
-    run_id = run.info.run_id if run else ""
-    return run_id, metrics
+    result = train_demo(mlflow_tracking_uri=f"file:{_MLRUNS_DIR}")
+    return result["run_id"], result["metrics"]
