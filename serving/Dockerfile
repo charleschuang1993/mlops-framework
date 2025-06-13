@@ -10,6 +10,7 @@ COPY pyproject.toml /app/
 RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi --only main --no-root
 
 # Copy source
+COPY src /app/src
 COPY serving /app/serving
 
 EXPOSE 8000
