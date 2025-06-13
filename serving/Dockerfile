@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Copy pyproject and install deps
 COPY pyproject.toml /app/
-RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi --only main
+RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi --only main --no-root
 
 # Copy source
 COPY serving /app/serving

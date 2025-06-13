@@ -13,21 +13,26 @@ services:
       - "5432:5432"
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
     depends_on:
       - postgres
     environment:
-      MLFLOW_TRACKING_URI: postgresql://mlflow:mlflow@postgres:5432/mlflow
       MLFLOW_ARTIFACT_ROOT: /mlflow/mlruns
     volumes:
       - ./data/mlruns:/mlflow/mlruns
-    command: >
-      mlflow server \
-        --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow \
-        --default-artifact-root /mlflow/mlruns \
-        --host 0.0.0.0
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - postgresql://mlflow:mlflow@postgres:5432/mlflow
+      - --default-artifact-root
+      - /mlflow/mlruns
+      - --host
+      - 0.0.0.0
     ports:
-      - "5000:5000"
+      - "5001:5000"
 
   api:
     build:
