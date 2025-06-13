@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import mlflow
 import mlflow.sklearn
@@ -215,13 +215,31 @@ async def delete_model_version(model_name: str, version: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# ---------- Train endpoint ----------
+
+@app.post("/train", tags=["mlflow"])
+async def train(background_tasks: BackgroundTasks):
+    """Trigger a training run using train_demo and log to MLflow.
+    Runs in background to avoid blocking request."""
+    from mlops_framework.train import train_demo
+
+    def _run_train():
+        try:
+            result = train_demo()
+            print("Training completed", result)
+        except Exception as exc:
+            print("Training failed", exc)
+
+    background_tasks.add_task(_run_train)
+    return {"status": "training_started"}
+
 # ----------- MLflow query endpoints -----------
 
 @app.get("/experiments", tags=["mlflow"])
 async def list_experiments():
     """Return all experiments id & name."""
     client = MlflowClient()
-    experiments = client.list_experiments()
+    experiments = client.search_experiments(max_results=10000)
     return [
         {"experiment_id": exp.experiment_id, "name": exp.name}
         for exp in experiments
@@ -256,12 +274,12 @@ async def list_runs(experiment_name: str, max_results: int = 20):
 async def list_registered_models():
     """List all registered models."""
     client = MlflowClient()
-    models = client.list_registered_models()
+    models = client.search_registered_models()
     return [
         {
             "name": m.name,
             "latest_versions": [
-                {"version": v.version, "stage": v.current_stage}
+                {"version": v.version, "stage": v.current_stage, "run_id": v.run_id}
                 for v in m.latest_versions
             ] if m.latest_versions else []
         }
