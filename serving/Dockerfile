@@ -1,23 +1,24 @@
-# Use a more reliable base image with pre-built wheels
-FROM python:3.10-slim
+# Use a minimal Alpine-based image
+FROM python:3.10
 
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    python3-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies with specific versions that have pre-built wheels
-RUN pip install --no-cache-dir \
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Install Python dependencies with specific versions
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
     mlflow==2.12.0 \
     scikit-learn==1.3.0 \
     numpy==1.24.3 \
     fastapi==0.95.2 \
     uvicorn==0.22.0 \
-    pydantic==1.10.7 \
-    --only-binary :all:
+    pydantic==1.10.7
 
 # Copy only the necessary source files
 COPY src/mlops_framework /app/src/mlops_framework
