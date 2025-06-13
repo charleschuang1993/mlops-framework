@@ -19,6 +19,9 @@ class PredictionResult(BaseModel):
     probabilities: Dict[str, float]
     model_version: str
 
+class LoadModelRequest(BaseModel):
+    run_id: str
+
 # Cache for the loaded model
 _model = None
 _model_version = None
@@ -110,7 +113,29 @@ async def predict(features: IrisFeatures):
             detail=f"Prediction failed: {str(e)}"
         )
 
-# Future endpoints (model prediction, registry, etc.) will be added here.
+# -------------------------
+# New endpoint: /load-model
+# -------------------------
+
+@app.post("/load-model", tags=["model"])
+async def load_model_endpoint(payload: LoadModelRequest):
+    """Load a specific MLflow run's model into memory.
+
+    Request body:
+    {
+        "run_id": "<mlflow_run_id>"
+    }
+    """
+    global _model, _model_version
+
+    try:
+        mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "file:./mlruns_test"))
+        model_uri = f"runs:/{payload.run_id}/model"
+        _model = mlflow.sklearn.load_model(model_uri)
+        _model_version = payload.run_id
+        return {"status": "loaded", "model_version": _model_version}
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Failed to load model: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
