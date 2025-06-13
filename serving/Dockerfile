@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
         pydantic==1.10.7
 
 COPY src/mlops_framework /app/src/mlops_framework
+COPY src/cli.py /app/src/cli.py
 COPY serving/main.py      /app/serving/main.py
 
 EXPOSE 8000
