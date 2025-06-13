@@ -1,15 +1,16 @@
 import pytest
 import os
+
+# 設定測試環境變數（必須在匯入 mlflow 之前）
+os.environ["MLFLOW_TRACKING_URI"] = "file:./mlruns_test"  # 本地路徑避免 /mlflow 只讀錯誤
+
 from fastapi.testclient import TestClient
 from fastapi import status
 import mlflow
 
-# 設定測試環境變數
-os.environ["MLFLOW_TRACKING_URI"] = "http://localhost:5001"  # 或使用 "sqlite:///test_mlruns.db" 進行本地測試
-
+# 只在測試時動態導入，避免與主程式衝突
 @pytest.fixture(scope="session")
 def test_client():
-    # 只在測試時動態導入，避免與主程式衝突
     from serving.main import app
     with TestClient(app) as client:
         yield client

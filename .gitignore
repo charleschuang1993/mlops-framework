@@ -4,7 +4,9 @@ __pycache__/
 
 # Virtual environments
 .venv/
-
+mlops-framework/venv/
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
 # MLflow artifacts
 data/mlruns/
 
@@ -14,3 +16,9 @@ data/postgres/
 # IDE / Editor settings
 .idea/
 .vscode/
+
+mlruns_test/
+
+venv/
+
+.coverage
