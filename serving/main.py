@@ -129,13 +129,20 @@ async def load_model_endpoint(payload: LoadModelRequest):
     global _model, _model_version
 
     try:
-        base_uri = os.getenv("MLFLOW_TRACKING_URI", "file:./mlruns_test")
-        # If using local file store, construct direct path to artifacts to avoid needing MLflow server
-        if base_uri.startswith("file:"):
-            root = base_uri.replace("file:", "")
-            model_uri = f"{root}/0/{payload.run_id}/artifacts/model"
+        # Always try local store first based on tracking URI if it uses file:
+        tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "")
+        local_root = tracking_uri.replace("file:", "") if tracking_uri.startswith("file:") else ""
+
+        if local_root:
+            local_model_path = f"{local_root}/0/{payload.run_id}/artifacts/model"
         else:
-            # Fallback to runs: URI for remote tracking server
+            local_model_path = ""
+
+        if local_model_path and os.path.exists(local_model_path):
+            model_uri = local_model_path
+        else:
+            # Fall back to whatever tracking URI is configured (docker scenario)
+            base_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
             mlflow.set_tracking_uri(base_uri)
             model_uri = f"runs:/{payload.run_id}/model"
         _model = mlflow.sklearn.load_model(model_uri)
