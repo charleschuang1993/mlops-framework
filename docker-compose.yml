@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  mlflow:
+    image: mlflow/mlflow:latest
+    depends_on:
+      - postgres
+    environment:
+      MLFLOW_TRACKING_URI: postgresql://mlflow:mlflow@postgres:5432/mlflow
+      MLFLOW_ARTIFACT_ROOT: /mlflow/mlruns
+    volumes:
+      - ./data/mlruns:/mlflow/mlruns
+    command: >
+      mlflow server \
+        --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow \
+        --default-artifact-root /mlflow/mlruns \
+        --host 0.0.0.0
+    ports:
+      - "5000:5000"
+
+  api:
+    build: ./serving
+    depends_on:
+      - mlflow
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8000:8000"
