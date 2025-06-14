@@ -270,7 +270,7 @@ async def list_model_versions(model_name: str):
 
 # ---------- Train endpoint ----------
 @app.post("/train", tags=["training"])
-async def train(payload: TrainRequest = Body(default=TrainRequest()), background_tasks: BackgroundTasks = None):
+async def train(background_tasks: BackgroundTasks, payload: TrainRequest = Body(default=TrainRequest())):
     """Trigger a training run using train_demo and log to MLflow.
     Runs in background to avoid blocking request."""
     try:
@@ -280,16 +280,15 @@ async def train(payload: TrainRequest = Body(default=TrainRequest()), background
 
     def _run_train():
         try:
-            mlflow.set_tag("model_name", payload.model_name)
             result = train_demo(C=payload.C, max_iter=payload.max_iter)
+            run_id = result.get("run_id")
+            # add model_name tag after run exists
+            MlflowClient().set_tag(run_id, "model_name", payload.model_name)
             print("Training completed", result)
         except Exception as exc:
             print("Training failed", exc)
 
-    if background_tasks is not None:
-        background_tasks.add_task(_run_train)
-    else:
-        _run_train()
+    background_tasks.add_task(_run_train)
     return {"status": "training_started", "model_name": payload.model_name}
 
 # ---------- Train status endpoint ----------
